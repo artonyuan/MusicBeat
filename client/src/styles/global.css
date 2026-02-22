@@ -1,0 +1,61 @@
+:root {
+  --bg-primary: #f0f0f0;
+  --bg-secondary: #ffffff;
+  --accent: #4d80c9;
+  --accent-soft: #6a96d8;
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --success: #7dae5e;
+  --warning: #ffeb3b;
+  --error: #d32f2f;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  font-family: 'Courier New', Courier, monospace;
+  color: var(--text-primary);
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: var(--accent);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: 'Courier New', Courier, monospace;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+button:hover {
+  background: var(--accent-soft);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+input[type="file"] {
+  display: none;
+}
