@@ -6,6 +6,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { requireAnonymousSessionForWrites } from './auth/anonymousSession.js';
+import { getHealthStatusSnapshot } from './monitoring/metrics.js';
+import { requestLogger } from './monitoring/requestLogger.js';
+import { monitorRouter } from './routes/monitor.js';
 import { uploadRouter } from './routes/upload.js';
 import { beatmapRouter } from './routes/beatmap.js';
 import { runRouter } from './routes/run.js';
@@ -133,6 +136,7 @@ app.use(helmet({
 }));
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
+app.use(requestLogger);
 
 // Serve uploaded audio files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -142,6 +146,7 @@ initDatabase();
 
 // API Routes
 app.use('/api/session', sessionRateLimiter, sessionRouter);
+app.use('/api/monitor', readRateLimiter, monitorRouter);
 app.use('/api/upload', requireAnonymousSessionForWrites, uploadRateLimiter, uploadRouter);
 app.use('/api/beatmap', readRateLimiter, requireAnonymousSessionForWrites, writeRateLimiter, beatmapRouter);
 app.use('/api/run', readRateLimiter, requireAnonymousSessionForWrites, writeRateLimiter, runRouter);
@@ -149,7 +154,7 @@ app.use(corsErrorHandler);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json(getHealthStatusSnapshot());
 });
 
 // Start server
