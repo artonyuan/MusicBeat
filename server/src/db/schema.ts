@@ -4,19 +4,31 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '../../data/musicbeat.db');
+const dataDir = path.join(__dirname, '../../data');
+const dbPath = path.join(dataDir, 'pong.db');
+const legacyDbPath = path.join(dataDir, 'musicbeat.db');
 
 let db: Database.Database;
 
 export function getDatabase(): Database.Database {
   if (!db) {
     // Ensure data directory exists
-    const dataDir = path.dirname(dbPath);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    db = new Database(dbPath);
+    let resolvedDbPath = dbPath;
+    if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
+      try {
+        fs.renameSync(legacyDbPath, dbPath);
+        console.log('Migrated database file: musicbeat.db -> pong.db');
+      } catch (error) {
+        console.warn('Failed to migrate legacy database file, continuing with existing path.', error);
+        resolvedDbPath = legacyDbPath;
+      }
+    }
+
+    db = new Database(resolvedDbPath);
     db.pragma('journal_mode = WAL');
   }
   return db;

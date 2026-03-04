@@ -67,7 +67,7 @@ export default function ResultsScreen() {
       ? 'Failed (HP depleted)'
       : null;
   const shareText = failed
-    ? `I failed in MusicBeat. ${scoreValue} pts ${accuracy}% accuracy`
+    ? `I failed in Pong. ${scoreValue} pts ${accuracy}% accuracy`
     : `My wrists survived. ${scoreValue} pts ${accuracy}% accuracy`;
   const shareUrl = shareId ? buildShareUrl(shareId) : '';
   const debugReport = beatmap?.debug;
@@ -173,7 +173,7 @@ export default function ResultsScreen() {
     try {
       const dataUrl = await toPng(shareCardRef.current, { cacheBust: true });
       const link = document.createElement('a');
-      link.download = `musicbeat-${safeTitle}.png`;
+      link.download = `pong-${safeTitle}.png`;
       link.href = dataUrl;
       link.click();
     } catch (error) {
@@ -305,7 +305,7 @@ export default function ResultsScreen() {
         <div style={styles.shareCardPreview}>
           <div ref={shareCardRef} style={styles.shareCard}>
             <div style={styles.shareCardHeader}>
-              <span style={styles.shareCardTitle}>MusicBeat</span>
+              <span style={styles.shareCardTitle}>Pong</span>
               <span style={styles.shareCardHandle}>@{safeHandle}</span>
             </div>
             <div style={styles.shareCardSong}>{safeTitle}</div>

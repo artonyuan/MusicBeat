@@ -73,13 +73,15 @@ const initialScore: GameScore = {
 };
 const MAX_HEALTH = 1;
 const MIN_HEALTH = 0;
+const HANDLE_STORAGE_KEY = 'pong:handle';
+const LEGACY_HANDLE_STORAGE_KEY = 'musicbeat:handle';
 
 function clampHealth(value: number) {
   return Math.max(MIN_HEALTH, Math.min(MAX_HEALTH, value));
 }
 
 const storedHandle = typeof window !== 'undefined'
-  ? window.localStorage.getItem('musicbeat:handle')
+  ? (window.localStorage.getItem(HANDLE_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_HANDLE_STORAGE_KEY))
   : null;
 const defaultHandle = storedHandle && storedHandle.trim() ? storedHandle : 'player';
 
@@ -104,7 +106,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   setPlayerHandle: (playerHandle) => {
     const trimmedHandle = playerHandle.trim();
     if (typeof window !== 'undefined' && trimmedHandle) {
-      window.localStorage.setItem('musicbeat:handle', trimmedHandle);
+      window.localStorage.setItem(HANDLE_STORAGE_KEY, trimmedHandle);
+      window.localStorage.removeItem(LEGACY_HANDLE_STORAGE_KEY);
     }
     set({ playerHandle });
   },

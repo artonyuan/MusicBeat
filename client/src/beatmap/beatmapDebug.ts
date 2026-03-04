@@ -1,7 +1,8 @@
 import type { BeatmapDebugReport } from '../types/beatmap';
 
 const DEBUG_QUERY_KEY = 'debugBeatmap';
-const DEBUG_STORAGE_KEY = 'musicbeat:debugBeatmap';
+const DEBUG_STORAGE_KEY = 'pong:debugBeatmap';
+const LEGACY_DEBUG_STORAGE_KEY = 'musicbeat:debugBeatmap';
 
 function parseBooleanFlag(value: string | null): boolean | null {
   if (value === null) return null;
@@ -18,6 +19,7 @@ export function isBeatmapDebugEnabled(): boolean {
   if (queryValue !== null) {
     try {
       window.localStorage.setItem(DEBUG_STORAGE_KEY, queryValue ? '1' : '0');
+      window.localStorage.removeItem(LEGACY_DEBUG_STORAGE_KEY);
     } catch {
       // Ignore storage failures in restricted browser modes.
     }
@@ -25,7 +27,16 @@ export function isBeatmapDebugEnabled(): boolean {
   }
 
   try {
-    return window.localStorage.getItem(DEBUG_STORAGE_KEY) === '1';
+    const stored = window.localStorage.getItem(DEBUG_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_DEBUG_STORAGE_KEY);
+    if (stored === '1' && window.localStorage.getItem(DEBUG_STORAGE_KEY) !== '1') {
+      try {
+        window.localStorage.setItem(DEBUG_STORAGE_KEY, '1');
+        window.localStorage.removeItem(LEGACY_DEBUG_STORAGE_KEY);
+      } catch {
+        // Ignore migration write failures and use in-memory read result.
+      }
+    }
+    return stored === '1';
   } catch {
     return false;
   }
@@ -78,7 +89,7 @@ export function downloadBeatmapDebugReport(report: BeatmapDebugReport, songTitle
   const safeTitle = slugify(songTitle);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   link.href = url;
-  link.download = `musicbeat-debug-${safeTitle}-${timestamp}.json`;
+  link.download = `pong-debug-${safeTitle}-${timestamp}.json`;
   link.click();
 
   URL.revokeObjectURL(url);

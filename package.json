@@ -1,5 +1,5 @@
 {
-  "name": "musicbeat",
+  "name": "pong",
   "version": "1.0.0",
   "private": true,
   "description": "Rhythm ping pong game with auto-beatmap generation",

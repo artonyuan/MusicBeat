@@ -111,7 +111,7 @@ export default function RunPage({ runId }: RunPageProps) {
           <h1 style={styles.title}>Run not found</h1>
           <p style={styles.subtitle}>{error ?? 'Try another link.'}</p>
           <button onClick={handlePlay} style={styles.primaryButton}>
-            Play MusicBeat
+            Play Pong
           </button>
         </div>
       </div>
