@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 
+import { downloadBeatmapDebugReport } from '../beatmap/beatmapDebug';
 import { useGameStore } from '../store/gameStore';
+import { DIFFICULTY_PRESETS } from '../types/game';
 
 import type { ChangeEvent } from 'react';
 
@@ -33,6 +35,7 @@ export default function ResultsScreen() {
   const setPlayerHandle = useGameStore((state) => state.setPlayerHandle);
   const songTitle = useGameStore((state) => state.songTitle);
   const setSongTitle = useGameStore((state) => state.setSongTitle);
+  const runOutcome = useGameStore((state) => state.runOutcome);
 
   const [shareId, setShareId] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
@@ -52,10 +55,22 @@ export default function ResultsScreen() {
   const safeTitle = songTitle.trim() || beatmap?.metadata.title || 'Untitled Track';
   const bpm = beatmap?.timing.bpm ?? 0;
   const duration = beatmap?.metadata.duration ?? 0;
+  const missStreakFail = DIFFICULTY_PRESETS[difficulty].missStreakFail;
 
   const { grade, color } = getGrade(accuracyValue);
-  const shareText = `My wrists survived. ${scoreValue} pts ${accuracy}% accuracy`;
+  const failed = runOutcome === 'hp_depleted' || runOutcome === 'miss_streak';
+  const failedReason = runOutcome === 'miss_streak'
+    ? (missStreakFail !== null
+      ? `Failed (${missStreakFail} miss streak)`
+      : 'Failed (miss streak)')
+    : runOutcome === 'hp_depleted'
+      ? 'Failed (HP depleted)'
+      : null;
+  const shareText = failed
+    ? `I failed in MusicBeat. ${scoreValue} pts ${accuracy}% accuracy`
+    : `My wrists survived. ${scoreValue} pts ${accuracy}% accuracy`;
   const shareUrl = shareId ? buildShareUrl(shareId) : '';
+  const debugReport = beatmap?.debug;
 
   const resetShareState = () => {
     setShareId(null);
@@ -167,10 +182,19 @@ export default function ResultsScreen() {
     }
   };
 
+  const handleDownloadDebugReport = () => {
+    if (!debugReport) return;
+
+    downloadBeatmapDebugReport(debugReport, safeTitle);
+    setCopyMessage('Debug report downloaded.');
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.content}>
-        <h1 style={styles.title}>MATCH RESULTS</h1>
+        <h1 style={styles.title}>{failed ? 'MATCH FAILED' : 'MATCH RESULTS'}</h1>
+
+        {failedReason && <p style={styles.failReason}>{failedReason}</p>}
 
         <div style={styles.gradeContainer}>
           <span style={{ ...styles.grade, color }}>{grade}</span>
@@ -249,7 +273,18 @@ export default function ResultsScreen() {
             <button onClick={handleCopyText} style={styles.shareSecondaryButton}>
               Copy Share Text
             </button>
+            {debugReport && (
+              <button onClick={handleDownloadDebugReport} style={styles.shareSecondaryButton}>
+                Download Debug JSON
+              </button>
+            )}
           </div>
+
+          {!debugReport && (
+            <p style={styles.debugHint}>
+              Need mapping diagnostics? Open with <code>?debugBeatmap=1</code> and regenerate the beatmap.
+            </p>
+          )}
 
           {shareError && <p style={styles.shareError}>{shareError}</p>}
 
@@ -324,6 +359,15 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '32px',
     textTransform: 'uppercase',
     letterSpacing: '4px',
+  },
+  failReason: {
+    marginTop: '-20px',
+    marginBottom: '24px',
+    color: '#d05050',
+    fontSize: '13px',
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
   },
   gradeContainer: {
     marginBottom: '40px',
@@ -481,6 +525,13 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#d05050',
     fontSize: '12px',
     letterSpacing: '1px',
+  },
+  debugHint: {
+    marginTop: '12px',
+    marginBottom: 0,
+    color: '#666',
+    fontSize: '11px',
+    letterSpacing: '0.5px',
   },
   shareLinkBox: {
     marginTop: '16px',

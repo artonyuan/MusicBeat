@@ -33,6 +33,7 @@ export interface Beatmap {
   };
   timing: TimingInfo;
   notes: BeatNote[];
+  debug?: BeatmapDebugReport;
 }
 
 export interface DetectedBeat {
@@ -47,4 +48,74 @@ export interface BeatAnalysis {
   beats: DetectedBeat[]; // Enriched beat data
   duration: number;
   usedFallback: boolean;
+  debug?: BeatAnalysisDebug;
+}
+
+export interface BeatDetectorDebug {
+  sampleRate: number;
+  offsetSec: number;
+  expectedBeats: number;
+  minimumDetectedBeats: number;
+  minimumRawBeats: number;
+  fallbackReason?: 'empty_grid' | 'sparse_grid_and_raw';
+  largestRawGapSec: number;
+  largestGridGapSec: number;
+  stageCounts: {
+    energyBeats: number;
+    bassBeats: number;
+    rawMergedBeats: number;
+    gridBeats: number;
+    finalDetectedBeats: number;
+  };
+}
+
+export interface BeatAnalysisDebug {
+  enabled: boolean;
+  detector: BeatDetectorDebug;
+}
+
+export interface BeatmapDebugWindow {
+  startSec: number;
+  endSec: number;
+  notes: number;
+  notesPerSecond: number;
+  maxGapSec: number;
+  avgGapSec: number;
+  laneCounts: {
+    left: number;
+    center: number;
+    right: number;
+  };
+  noteTypeCounts: Record<NoteType, number>;
+  laneEntropy: number; // 0-1
+  typeEntropy: number; // 0-1
+  longestSameLaneStreak: number;
+  dropReasons: Record<string, number>;
+  score: number;
+}
+
+export interface BeatmapDebugReport {
+  version: number;
+  generatedAt: string;
+  enabled: boolean;
+  durationSec: number;
+  bpm: number;
+  usedFallback: boolean;
+  songFingerprint: string;
+  binSizeSec: number;
+  stageCounts: {
+    detector: BeatDetectorDebug['stageCounts'];
+    continuityBeats: number;
+    filteredBeats: number;
+    finalNotes: number;
+    holdNotes: number;
+    switchNotes: number;
+    echoNotes: number;
+  };
+  holdCoverageSec: number;
+  largestFinalGapSec: number;
+  dropReasons: Record<string, number>;
+  alerts: string[];
+  windows: BeatmapDebugWindow[];
+  worstWindows: BeatmapDebugWindow[];
 }

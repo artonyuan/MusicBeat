@@ -27,6 +27,9 @@ export default function UploadScreen() {
   const [dragOver, setDragOver] = useState(false);
   const setScreen = useGameStore((state) => state.setScreen);
   const setAudioBuffer = useGameStore((state) => state.setAudioBuffer);
+  const setBeatmap = useGameStore((state) => state.setBeatmap);
+  const setPhase = useGameStore((state) => state.setPhase);
+  const resetScore = useGameStore((state) => state.resetScore);
   const setSongTitle = useGameStore((state) => state.setSongTitle);
   const difficulty = useGameStore((state) => state.difficulty);
   const setDifficulty = useGameStore((state) => state.setDifficulty);
@@ -41,8 +44,12 @@ export default function UploadScreen() {
       const arrayBuffer = await file.arrayBuffer();
       const audioContext = new AudioContext();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      await audioContext.close();
 
       const cleanedTitle = file.name.replace(/\.[^/.]+$/, '');
+      resetScore();
+      setPhase('countdown');
+      setBeatmap(null);
       setSongTitle(cleanedTitle);
       setAudioBuffer(audioBuffer);
       setScreen('loading');

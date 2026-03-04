@@ -1,6 +1,9 @@
-import type { BeatAnalysis, DetectedBeat } from '../types/beatmap';
+import { isBeatmapDebugEnabled } from '../beatmap/beatmapDebug';
+
+import type { BeatAnalysis, BeatDetectorDebug, DetectedBeat } from '../types/beatmap';
 
 export async function analyzeBeatmap(audioBuffer: AudioBuffer): Promise<BeatAnalysis> {
+  const debugEnabled = isBeatmapDebugEnabled();
   const monoData = mixToMono(audioBuffer);
   const sampleRate = audioBuffer.sampleRate;
 
@@ -18,7 +21,8 @@ export async function analyzeBeatmap(audioBuffer: AudioBuffer): Promise<BeatAnal
   const offset = findBeatOffset(rawBeats, bpm);
 
   // 4. Generate a clean grid based on BPM + Offset
-  let beats = generateRhythmicGrid(rawBeats, bpm, offset, audioBuffer.duration);
+  const gridBeats = generateRhythmicGrid(rawBeats, bpm, offset, audioBuffer.duration);
+  let beats = gridBeats;
 
   // 5. Fallback only when both grid output and raw detections are very sparse.
   // This keeps nuanced detection data for energetic tracks instead of flattening them.
@@ -26,10 +30,12 @@ export async function analyzeBeatmap(audioBuffer: AudioBuffer): Promise<BeatAnal
   const minimumDetectedBeats = Math.max(12, Math.floor(expectedBeats * 0.12));
   const minimumRawBeats = Math.max(8, Math.floor(expectedBeats * 0.08));
   let usedFallback = false;
+  let fallbackReason: BeatDetectorDebug['fallbackReason'];
   if (
     beats.length === 0 ||
     (beats.length < minimumDetectedBeats && rawBeats.length < minimumRawBeats)
   ) {
+    fallbackReason = beats.length === 0 ? 'empty_grid' : 'sparse_grid_and_raw';
     beats = generateRegularGrid(bpm, offset, audioBuffer.duration);
     usedFallback = true;
   }
@@ -43,6 +49,28 @@ export async function analyzeBeatmap(audioBuffer: AudioBuffer): Promise<BeatAnal
     beats,
     duration: audioBuffer.duration,
     usedFallback,
+    debug: debugEnabled
+      ? {
+        enabled: true,
+        detector: {
+          sampleRate,
+          offsetSec: offset,
+          expectedBeats,
+          minimumDetectedBeats,
+          minimumRawBeats,
+          fallbackReason,
+          largestRawGapSec: calculateLargestGapSec(rawBeats, audioBuffer.duration),
+          largestGridGapSec: calculateLargestGapSec(gridBeats, audioBuffer.duration),
+          stageCounts: {
+            energyBeats: energyBeats.length,
+            bassBeats: bassBeats.length,
+            rawMergedBeats: rawBeats.length,
+            gridBeats: gridBeats.length,
+            finalDetectedBeats: beats.length,
+          },
+        },
+      }
+      : undefined,
   };
 }
 
@@ -162,6 +190,22 @@ function clamp01(value: number): number {
   if (value <= 0) return 0;
   if (value >= 1) return 1;
   return value;
+}
+
+function calculateLargestGapSec(beats: DetectedBeat[], duration: number): number {
+  if (duration <= 0) return 0;
+  if (beats.length === 0) return duration;
+
+  let largestGap = beats[0]!.time;
+  for (let i = 1; i < beats.length; i++) {
+    const gap = beats[i]!.time - beats[i - 1]!.time;
+    if (gap > largestGap) largestGap = gap;
+  }
+
+  const trailingGap = duration - beats[beats.length - 1]!.time;
+  if (trailingGap > largestGap) largestGap = trailingGap;
+
+  return Math.max(0, largestGap);
 }
 
 /**
@@ -315,6 +359,31 @@ function generateRhythmicGrid(rawBeats: DetectedBeat[], bpm: number, offset: num
     }
   }
 
+  const minOffGridSpacing = beatInterval * (bpm >= 150 ? 0.18 : 0.22);
+  const offGridEnergyThreshold = avgEnergy > 0
+    ? Math.max(
+      avgEnergy * (bpm >= 150 ? 1.03 : 1.1),
+      avgEnergy + energyStdDev * (bpm >= 150 ? 0.05 : 0.15),
+    )
+    : 0;
+
+  // Preserve strong off-grid peaks that survived detection but didn't fit strict quantization.
+  // This keeps syncopation/build-up accents in energetic genres.
+  for (let i = 0; i < rawBeats.length; i++) {
+    if (usedBeats.has(i)) continue;
+    const candidate = rawBeats[i];
+    if (candidate.energy < offGridEnergyThreshold) continue;
+
+    const tooCloseToExisting = finalBeats.some((beat) => Math.abs(beat.time - candidate.time) < minOffGridSpacing);
+    if (tooCloseToExisting) continue;
+
+    finalBeats.push({
+      time: candidate.time,
+      energy: candidate.energy,
+      isBass: candidate.isBass,
+    });
+  }
+
   // Sort by time
   finalBeats.sort((a, b) => a.time - b.time);
 
@@ -420,7 +489,7 @@ function detectBassBeats(samples: Float32Array, sampleRate: number): DetectedBea
   }
 
   const beats: DetectedBeat[] = [];
-  const windowSize = 15;
+  const windowSize = 10;
 
   for (let i = windowSize; i < energies.length - windowSize; i++) {
     const current = energies[i];
@@ -437,9 +506,10 @@ function detectBassBeats(samples: Float32Array, sampleRate: number): DetectedBea
     const localVariance = (localSqSum / count) - (localAvg * localAvg);
     const localStdDev = Math.sqrt(Math.max(0, localVariance));
 
-    const C = 2.0; // Sensitive enough for sustained bass
-    const minThreshold = 0.05;
-    const threshold = localAvg + (C * localStdDev);
+    const coefficientOfVariation = localStdDev / (localAvg + 1e-6);
+    const sensitivity = clamp(1.15 + coefficientOfVariation * 1.6, 1.15, 2.0);
+    const minThreshold = Math.max(0.02, localAvg * 0.28);
+    const threshold = localAvg + (sensitivity * localStdDev);
 
     if (current > threshold && 
         current > minThreshold && 
@@ -451,7 +521,7 @@ function detectBassBeats(samples: Float32Array, sampleRate: number): DetectedBea
         energy: current, // Raw energy value
         isBass: true,
       });
-      i += 10;
+      i += 6;
     }
   }
 
@@ -472,7 +542,7 @@ function detectBeatsEnergy(samples: Float32Array, sampleRate: number): DetectedB
   }
 
   const beats: DetectedBeat[] = [];
-  const windowSize = 50;
+  const windowSize = 28;
 
   for (let i = windowSize; i < energies.length - windowSize; i++) {
     const current = energies[i];
@@ -489,17 +559,17 @@ function detectBeatsEnergy(samples: Float32Array, sampleRate: number): DetectedB
     const localVariance = (localSqSum / count) - (localAvg * localAvg);
     const localStdDev = Math.sqrt(Math.max(0, localVariance));
 
-    // Dynamic threshold using Z-score (Mean + K * StdDev)
-    // Helps with both:
-    // 1. Compressed/Loud tracks (Low variance -> threshold hugs the mean -> detects small peaks)
-    // 2. Quiet/Dynamic tracks (High variance -> threshold rises -> avoids noise)
-    const C = 2.5; // Sensitivity constant
-    const minThreshold = 0.03; // Minimum absolute energy to be considered a beat
-    const threshold = localAvg + (C * localStdDev);
+    // Adaptive threshold:
+    // compressed sections (low variance) should use a lower multiplier,
+    // while highly dynamic sections can keep a stricter threshold.
+    const coefficientOfVariation = localStdDev / (localAvg + 1e-6);
+    const sensitivity = clamp(1.2 + coefficientOfVariation * 1.4, 1.15, 2.2);
+    const minThreshold = Math.max(0.015, localAvg * 0.24);
+    const threshold = localAvg + (sensitivity * localStdDev);
 
     if (current > threshold &&
         current > minThreshold &&
-        current > energies[i-1] &&
+        current >= energies[i-1] &&
         current > energies[i+1]) {
       
       beats.push({
@@ -508,9 +578,15 @@ function detectBeatsEnergy(samples: Float32Array, sampleRate: number): DetectedB
         isBass: false,
       });
 
-      i += 15;
+      i += 9;
     }
   }
 
   return beats;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
 }

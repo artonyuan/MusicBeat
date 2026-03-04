@@ -3,6 +3,9 @@ import { useGameStore } from '../store/gameStore';
 interface GameHUDProps {
   currentTime: number;
   duration: number;
+  health: number;
+  missStreak: number;
+  missStreakFail: number | null;
   onPause: () => void;
   volume: number;
   onVolumeChange: (volume: number) => void;
@@ -13,6 +16,9 @@ interface GameHUDProps {
 export default function GameHUD({
   currentTime,
   duration,
+  health,
+  missStreak,
+  missStreakFail,
   onPause,
   volume,
   onVolumeChange,
@@ -28,6 +34,8 @@ export default function GameHUD({
   };
 
   const progress = Math.min((currentTime / duration) * 100, 100);
+  const healthPercent = Math.round(health * 100);
+  const healthColor = healthPercent > 60 ? '#48a868' : healthPercent > 30 ? '#f2a23a' : '#d05050';
 
   return (
     <div style={styles.container}>
@@ -47,6 +55,27 @@ export default function GameHUD({
             <span style={styles.label}>COMBO</span>
             <span style={styles.value}>{score.combo}</span>
           </div>
+        </div>
+
+        <div style={styles.hpBox}>
+          <div style={styles.hpHeader}>
+            <span style={styles.label}>HP</span>
+            <span style={styles.hpValue}>{healthPercent}%</span>
+          </div>
+          <div style={styles.hpTrack}>
+            <div
+              style={{
+                ...styles.hpFill,
+                width: `${healthPercent}%`,
+                background: healthColor,
+              }}
+            />
+          </div>
+          {missStreakFail !== null && (
+            <span style={styles.hpStreakText}>
+              Miss Streak {missStreak}/{missStreakFail}
+            </span>
+          )}
         </div>
       </div>
 
@@ -131,6 +160,8 @@ const styles: Record<string, React.CSSProperties> = {
   topBarContainer: {
     display: 'flex',
     justifyContent: 'center',
+    alignItems: 'center',
+    gap: '12px',
     width: '100%',
   },
   scoreBox: {
@@ -152,6 +183,45 @@ const styles: Record<string, React.CSSProperties> = {
     width: '1px',
     height: '30px',
     background: '#e0e0e0',
+  },
+  hpBox: {
+    background: '#ffffff',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    minWidth: '170px',
+    border: '2px solid #e0e0e0',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  hpHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  hpValue: {
+    fontSize: '12px',
+    color: '#555',
+    fontWeight: 'bold',
+    letterSpacing: '1px',
+  },
+  hpTrack: {
+    width: '100%',
+    height: '8px',
+    background: '#e5e5e5',
+    borderRadius: '999px',
+    overflow: 'hidden',
+  },
+  hpFill: {
+    height: '100%',
+    borderRadius: '999px',
+    transition: 'width 0.1s linear',
+  },
+  hpStreakText: {
+    fontSize: '10px',
+    color: '#777',
+    letterSpacing: '0.7px',
   },
   label: {
     fontSize: '10px',

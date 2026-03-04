@@ -1,7 +1,18 @@
 import { create } from 'zustand';
-import type { GameScreen, GamePhase, GameScore, HitResult, HitFeedback, DifficultyLevel, GameplaySettings } from '../types/game';
-import type { Beatmap } from '../types/beatmap';
+
 import { SCORING, DIFFICULTY_PRESETS } from '../types/game';
+
+import type {
+  GameScreen,
+  GamePhase,
+  GameScore,
+  HitResult,
+  HitFeedback,
+  DifficultyLevel,
+  GameplaySettings,
+  RunOutcome,
+} from '../types/game';
+import type { Beatmap } from '../types/beatmap';
 
 interface GameState {
   // Navigation
@@ -33,7 +44,12 @@ interface GameState {
 
   // Score tracking
   score: GameScore;
+  health: number;
+  missStreak: number;
+  runOutcome: RunOutcome | null;
+  setRunOutcome: (outcome: RunOutcome | null) => void;
   recordHit: (result: HitResult, options?: { pointsMultiplier?: number; incrementCombo?: boolean }) => void;
+  applyPassiveDrain: (deltaSeconds: number) => void;
   addPoints: (points: number) => void;
   resetScore: () => void;
 
@@ -55,6 +71,12 @@ const initialScore: GameScore = {
   okCount: 0,
   missCount: 0,
 };
+const MAX_HEALTH = 1;
+const MIN_HEALTH = 0;
+
+function clampHealth(value: number) {
+  return Math.max(MIN_HEALTH, Math.min(MAX_HEALTH, value));
+}
 
 const storedHandle = typeof window !== 'undefined'
   ? window.localStorage.getItem('musicbeat:handle')
@@ -91,10 +113,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   setSongTitle: (songTitle) => set({ songTitle }),
 
   score: { ...initialScore },
+  health: MAX_HEALTH,
+  missStreak: 0,
+  runOutcome: null,
+  setRunOutcome: (runOutcome) => set({ runOutcome }),
 
   recordHit: (result, options) => {
-    const { score } = get();
+    const { score, health, missStreak } = get();
     const { pointsMultiplier = 1, incrementCombo = true } = options ?? {};
+    const gameplaySettings = DIFFICULTY_PRESETS[get().difficulty];
 
     const scoring = SCORING[result];
 
@@ -104,6 +131,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     const newCombo = scoring.keepCombo
       ? (incrementCombo ? score.combo + 1 : score.combo)
       : 0;
+    const newMissStreak = result === 'miss' ? missStreak + 1 : 0;
+    const healthDelta = result === 'miss'
+      ? -gameplaySettings.hpMissPenalty
+      : gameplaySettings.hpGain[result];
+    const nextHealth = clampHealth(health + healthDelta);
 
     set({
       score: {
@@ -113,7 +145,20 @@ export const useGameStore = create<GameState>((set, get) => ({
         maxCombo: Math.max(score.maxCombo, newCombo),
         [`${result}Count`]: (score[`${result}Count` as keyof GameScore] as number) + 1,
       },
+      health: nextHealth,
+      missStreak: newMissStreak,
     });
+  },
+
+  applyPassiveDrain: (deltaSeconds) => {
+    if (deltaSeconds <= 0) return;
+
+    const { health } = get();
+    const gameplaySettings = DIFFICULTY_PRESETS[get().difficulty];
+    const drainedHealth = clampHealth(health - gameplaySettings.hpDrainPerSecond * deltaSeconds);
+
+    if (drainedHealth === health) return;
+    set({ health: drainedHealth });
   },
 
   addPoints: (points) => {
@@ -128,7 +173,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
 
-  resetScore: () => set({ score: { ...initialScore } }),
+  resetScore: () => set({
+    score: { ...initialScore },
+    health: MAX_HEALTH,
+    missStreak: 0,
+    runOutcome: null,
+  }),
 
   hitFeedbacks: [],
   addHitFeedback: (feedback) => {
@@ -151,6 +201,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       audioBuffer: null,
       songTitle: '',
       score: { ...initialScore },
+      health: MAX_HEALTH,
+      missStreak: 0,
+      runOutcome: null,
       hitFeedbacks: [],
     });
   },
