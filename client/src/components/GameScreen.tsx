@@ -24,7 +24,6 @@ export default function GameScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [countdown, setCountdown] = useState(3);
-  const [volume, setVolume] = useState(0.3); // Start at 30%
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
 
   // Hit sound buffer
@@ -37,6 +36,8 @@ export default function GameScreen() {
   const setScreen = useGameStore((state) => state.setScreen);
   const resetGame = useGameStore((state) => state.resetGame);
   const difficulty = useGameStore((state) => state.difficulty);
+  const volume = useGameStore((state) => state.musicVolume);
+  const setMusicVolume = useGameStore((state) => state.setMusicVolume);
   const health = useGameStore((state) => state.health);
   const missStreak = useGameStore((state) => state.missStreak);
   const setRunOutcome = useGameStore((state) => state.setRunOutcome);
@@ -177,14 +178,14 @@ export default function GameScreen() {
 
   // Handle volume change - update gain node directly
   const handleVolumeChange = useCallback((newVolume: number) => {
-    setVolume(newVolume);
+    setMusicVolume(newVolume);
 
     if (gainNodeRef.current) {
       // Direct value assignment - works immediately
       // Use small value instead of 0 to avoid clicks, but true 0 for mute
       gainNodeRef.current.gain.value = newVolume === 0 ? 0 : newVolume;
     }
-  }, []);
+  }, [setMusicVolume]);
 
   // Start the game audio - only call once!
   const startGame = useCallback(() => {
@@ -464,7 +465,16 @@ export default function GameScreen() {
       {phase === 'countdown' && countdown > 0 && (
         <div style={styles.countdownOverlay}>
           <div style={styles.countdownNumber}>{countdown}</div>
-          <p style={styles.countdownHint}>Press SPACE or click to hit!</p>
+          <div style={styles.countdownControls}>
+            <span style={styles.countdownControlsTitle}>CONTROLS</span>
+            <div style={styles.countdownKeyRow}>
+              <span style={styles.countdownKey}>←</span>
+              <span style={styles.countdownKey}>↑</span>
+              <span style={styles.countdownKey}>→</span>
+            </div>
+            <p style={styles.countdownHint}>Left / Center / Right lane</p>
+            <p style={styles.countdownAltHint}>A / W / D + SPACE also work</p>
+          </div>
         </div>
       )}
 
@@ -539,9 +549,50 @@ const styles: Record<string, React.CSSProperties> = {
     textShadow: '0 0 60px rgba(192, 144, 128, 0.4)',
   },
   countdownHint: {
+    margin: 0,
+    fontSize: '13px',
+    color: '#b6a8b3',
+    letterSpacing: '0.4px',
+  },
+  countdownControls: {
     marginTop: '20px',
-    fontSize: '18px',
-    color: '#8a8090',
+    padding: '12px 14px',
+    minWidth: '280px',
+    background: 'rgba(20, 24, 34, 0.82)',
+    border: '2px solid rgba(224, 213, 200, 0.42)',
+    borderRadius: '4px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '7px',
+  },
+  countdownControlsTitle: {
+    fontSize: '10px',
+    color: '#d7cabf',
+    letterSpacing: '2px',
+    fontWeight: 700,
+  },
+  countdownKeyRow: {
+    display: 'flex',
+    gap: '6px',
+  },
+  countdownKey: {
+    minWidth: '42px',
+    padding: '7px 10px',
+    borderRadius: '2px',
+    border: '2px solid rgba(224, 213, 200, 0.58)',
+    background: 'rgba(224, 213, 200, 0.08)',
+    color: '#eee2d8',
+    fontSize: '22px',
+    fontWeight: 700,
+    lineHeight: 1,
+    textAlign: 'center',
+  },
+  countdownAltHint: {
+    margin: 0,
+    fontSize: '11px',
+    color: '#9f97a6',
+    letterSpacing: '0.2px',
   },
   pauseOverlay: {
     position: 'absolute',

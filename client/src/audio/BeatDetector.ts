@@ -260,6 +260,9 @@ function findBeatOffset(rawBeats: DetectedBeat[], bpm: number): number {
  * This preserves syncopation and build-up patterns.
  */
 function generateRhythmicGrid(rawBeats: DetectedBeat[], bpm: number, offset: number, duration: number): DetectedBeat[] {
+  if (rawBeats.length === 0) return [];
+
+  const sortedRawBeats = [...rawBeats].sort((a, b) => a.time - b.time);
   const finalBeats: DetectedBeat[] = [];
   const beatInterval = 60 / bpm;
 
@@ -269,15 +272,11 @@ function generateRhythmicGrid(rawBeats: DetectedBeat[], bpm: number, offset: num
   const quarterWindow = 0.06; // 60ms for quarter-beats (16ths)
 
   // Calculate average energy to identify strong off-grid beats
-  const avgEnergy = rawBeats.length > 0 
-    ? rawBeats.reduce((sum, b) => sum + b.energy, 0) / rawBeats.length 
-    : 0;
-  const energyVariance = rawBeats.length > 0
-    ? rawBeats.reduce((sum, beat) => {
+  const avgEnergy = sortedRawBeats.reduce((sum, b) => sum + b.energy, 0) / sortedRawBeats.length;
+  const energyVariance = sortedRawBeats.reduce((sum, beat) => {
       const delta = beat.energy - avgEnergy;
       return sum + delta * delta;
-    }, 0) / rawBeats.length
-    : 0;
+    }, 0) / sortedRawBeats.length;
   const energyStdDev = Math.sqrt(energyVariance);
   const quarterEnergyThreshold = avgEnergy > 0
     ? Math.max(
@@ -288,106 +287,202 @@ function generateRhythmicGrid(rawBeats: DetectedBeat[], bpm: number, offset: num
 
   // Track which raw beats have been used
   const usedBeats = new Set<number>();
+  const quantizedNudgeWindowSec = Math.min(0.045, beatInterval * 0.16);
 
   // Iterate through the IDEAL grid (main beats)
   for (let t = offset; t < duration; t += beatInterval) {
-    // Find the strongest beat close to this grid time
-    const nearbyMainBeats = rawBeats.filter((raw, idx) => 
-      !usedBeats.has(idx) && Math.abs(raw.time - t) < mainWindow
-    );
-    
-    if (nearbyMainBeats.length > 0) {
-      const strongest = nearbyMainBeats.reduce((prev, current) => 
-        (current.energy > prev.energy) ? current : prev
-      );
-      
+    const mainMatch = findStrongestNearbyBeat({
+      beats: sortedRawBeats,
+      usedBeatIndexes: usedBeats,
+      targetTime: t,
+      windowSec: mainWindow,
+    });
+
+    if (mainMatch !== undefined) {
+      const alignedMainTime = alignBeatTimeToTransient(t, mainMatch.beat.time, quantizedNudgeWindowSec);
+
       finalBeats.push({
-        time: t,
-        energy: strongest.energy,
-        isBass: strongest.isBass
+        time: alignedMainTime,
+        energy: mainMatch.beat.energy,
+        isBass: mainMatch.beat.isBass
       });
-      
-      // Mark as used
-      const idx = rawBeats.findIndex(b => b.time === strongest.time);
-      if (idx >= 0) usedBeats.add(idx);
+
+      usedBeats.add(mainMatch.index);
     }
 
     // Check half-beats (8th notes)
     const halfT = t + (beatInterval / 2);
-    const nearbyHalfBeats = rawBeats.filter((raw, idx) => 
-      !usedBeats.has(idx) && Math.abs(raw.time - halfT) < halfWindow
-    );
+    const halfMatch = findStrongestNearbyBeat({
+      beats: sortedRawBeats,
+      usedBeatIndexes: usedBeats,
+      targetTime: halfT,
+      windowSec: halfWindow,
+    });
 
-    if (nearbyHalfBeats.length > 0) {
-      const strongestHalf = nearbyHalfBeats.reduce((prev, current) => 
-        (current.energy > prev.energy) ? current : prev
-      );
+    if (halfMatch !== undefined) {
+      const alignedHalfTime = alignBeatTimeToTransient(halfT, halfMatch.beat.time, quantizedNudgeWindowSec);
 
       finalBeats.push({
-        time: halfT,
-        energy: strongestHalf.energy,
-        isBass: strongestHalf.isBass
+        time: alignedHalfTime,
+        energy: halfMatch.beat.energy,
+        isBass: halfMatch.beat.isBass
       });
-      
-      const idx = rawBeats.findIndex(b => b.time === strongestHalf.time);
-      if (idx >= 0) usedBeats.add(idx);
+
+      usedBeats.add(halfMatch.index);
     }
 
     // Check quarter-beats (16th notes) - only keep if very strong (build-ups/rolls)
     const quarters = [t + beatInterval * 0.25, t + beatInterval * 0.75];
     for (const quarterT of quarters) {
-      const nearbyQuarterBeats = rawBeats.filter((raw, idx) => 
-        !usedBeats.has(idx) && 
-        Math.abs(raw.time - quarterT) < quarterWindow &&
-        raw.energy >= quarterEnergyThreshold
-      );
+      const quarterMatch = findStrongestNearbyBeat({
+        beats: sortedRawBeats,
+        usedBeatIndexes: usedBeats,
+        targetTime: quarterT,
+        windowSec: quarterWindow,
+        minEnergy: quarterEnergyThreshold,
+      });
 
-      if (nearbyQuarterBeats.length > 0) {
-        const strongestQuarter = nearbyQuarterBeats.reduce((prev, current) => 
-          (current.energy > prev.energy) ? current : prev
-        );
+      if (quarterMatch !== undefined) {
+        const alignedQuarterTime = alignBeatTimeToTransient(quarterT, quarterMatch.beat.time, quantizedNudgeWindowSec);
 
         finalBeats.push({
-          time: quarterT,
-          energy: strongestQuarter.energy,
-          isBass: strongestQuarter.isBass
+          time: alignedQuarterTime,
+          energy: quarterMatch.beat.energy,
+          isBass: quarterMatch.beat.isBass
         });
-        
-        const idx = rawBeats.findIndex(b => b.time === strongestQuarter.time);
-        if (idx >= 0) usedBeats.add(idx);
+
+        usedBeats.add(quarterMatch.index);
       }
     }
   }
 
-  const minOffGridSpacing = beatInterval * (bpm >= 150 ? 0.18 : 0.22);
+  const minOffGridSpacing = beatInterval * (bpm >= 150 ? 0.24 : 0.28);
   const offGridEnergyThreshold = avgEnergy > 0
     ? Math.max(
-      avgEnergy * (bpm >= 150 ? 1.03 : 1.1),
-      avgEnergy + energyStdDev * (bpm >= 150 ? 0.05 : 0.15),
+      avgEnergy * (bpm >= 150 ? 1.12 : 1.22),
+      avgEnergy + energyStdDev * (bpm >= 150 ? 0.2 : 0.35),
     )
     : 0;
+  const offGridSnapToleranceSec = Math.min(0.06, beatInterval * (bpm >= 150 ? 0.12 : 0.15));
+  const maxOffGridBeats = Math.max(2, Math.floor((duration / beatInterval) * (bpm >= 150 ? 0.22 : 0.16)));
+  let offGridBeatsAdded = 0;
 
-  // Preserve strong off-grid peaks that survived detection but didn't fit strict quantization.
-  // This keeps syncopation/build-up accents in energetic genres.
-  for (let i = 0; i < rawBeats.length; i++) {
+  // Preserve only musically close off-grid peaks (triplets/16ths) to avoid noisy desync notes.
+  for (let i = 0; i < sortedRawBeats.length; i++) {
+    if (offGridBeatsAdded >= maxOffGridBeats) break;
     if (usedBeats.has(i)) continue;
-    const candidate = rawBeats[i];
+    const candidate = sortedRawBeats[i];
     if (candidate.energy < offGridEnergyThreshold) continue;
 
-    const tooCloseToExisting = finalBeats.some((beat) => Math.abs(beat.time - candidate.time) < minOffGridSpacing);
+    const snapped = quantizeToMusicalSubdivision(candidate.time, offset, beatInterval);
+    if (snapped.errorSec > offGridSnapToleranceSec) continue;
+
+    const alignedTime = alignBeatTimeToTransient(snapped.time, candidate.time, offGridSnapToleranceSec);
+    const boundedTime = clamp(alignedTime, 0, duration);
+    const tooCloseToExisting = finalBeats.some((beat) => Math.abs(beat.time - boundedTime) < minOffGridSpacing);
     if (tooCloseToExisting) continue;
 
     finalBeats.push({
-      time: candidate.time,
+      time: boundedTime,
       energy: candidate.energy,
       isBass: candidate.isBass,
     });
+    offGridBeatsAdded++;
   }
 
-  // Sort by time
+  // Sort by time and dedupe very near hits.
   finalBeats.sort((a, b) => a.time - b.time);
+  const dedupeThreshold = Math.max(0.03, beatInterval * 0.08);
+  const deduped: DetectedBeat[] = [];
+  for (const beat of finalBeats) {
+    const previous = deduped[deduped.length - 1];
+    if (!previous || beat.time - previous.time >= dedupeThreshold) {
+      deduped.push(beat);
+      continue;
+    }
 
-  return finalBeats;
+    if (beat.energy > previous.energy) {
+      previous.time = beat.time;
+      previous.energy = beat.energy;
+      previous.isBass = previous.isBass || beat.isBass;
+    } else if (beat.isBass) {
+      previous.isBass = true;
+    }
+  }
+
+  return deduped;
+}
+
+function findStrongestNearbyBeat(input: {
+  beats: DetectedBeat[];
+  usedBeatIndexes: Set<number>;
+  targetTime: number;
+  windowSec: number;
+  minEnergy?: number;
+}): { beat: DetectedBeat; index: number } | undefined {
+  const { beats, usedBeatIndexes, targetTime, windowSec, minEnergy = 0 } = input;
+  let strongestIndex = -1;
+  let strongestEnergy = -Infinity;
+  let smallestDistance = Infinity;
+
+  for (let i = 0; i < beats.length; i++) {
+    if (usedBeatIndexes.has(i)) continue;
+    const beat = beats[i]!;
+    if (beat.energy < minEnergy) continue;
+
+    const distance = Math.abs(beat.time - targetTime);
+    if (distance >= windowSec) continue;
+
+    if (
+      beat.energy > strongestEnergy ||
+      (beat.energy === strongestEnergy && distance < smallestDistance)
+    ) {
+      strongestIndex = i;
+      strongestEnergy = beat.energy;
+      smallestDistance = distance;
+    }
+  }
+
+  if (strongestIndex < 0) return undefined;
+  return {
+    beat: beats[strongestIndex]!,
+    index: strongestIndex,
+  };
+}
+
+function alignBeatTimeToTransient(gridTime: number, transientTime: number, maxNudgeSec: number): number {
+  const boundedNudge = clamp(transientTime - gridTime, -maxNudgeSec, maxNudgeSec);
+  return gridTime + boundedNudge * 0.75;
+}
+
+function quantizeToMusicalSubdivision(time: number, offset: number, beatInterval: number): { time: number; errorSec: number } {
+  const steps = [
+    beatInterval,
+    beatInterval / 2,
+    beatInterval / 3,
+    beatInterval / 4,
+    beatInterval / 6,
+  ];
+
+  let bestTime = time;
+  let bestError = Infinity;
+
+  for (const step of steps) {
+    if (step <= 0) continue;
+    const phase = (time - offset) / step;
+    const quantized = offset + Math.round(phase) * step;
+    const error = Math.abs(quantized - time);
+
+    if (error < bestError) {
+      bestError = error;
+      bestTime = quantized;
+    }
+  }
+
+  return {
+    time: bestTime,
+    errorSec: bestError,
+  };
 }
 
 // --- Simplified Standard Detection Methods ---

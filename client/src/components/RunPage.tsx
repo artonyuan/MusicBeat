@@ -1,6 +1,46 @@
 import { useEffect, useState } from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
+
+interface ApiErrorPayload {
+  error?: string;
+  message?: string;
+}
+
+function getApiUrl(path: string): string {
+  if (!API_BASE_URL) return path;
+  const normalizedBaseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+  return `${normalizedBaseUrl}${path}`;
+}
+
+async function getApiErrorMessage(response: Response): Promise<string> {
+  const fallbackMessage = response.status === 404
+    ? 'Run not found.'
+    : `Request failed with status ${response.status}.`;
+
+  try {
+    const payload = (await response.json()) as ApiErrorPayload;
+    const errorMessage = typeof payload.error === 'string' ? payload.error.trim() : '';
+    if (errorMessage) return errorMessage;
+    const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+    if (message) return message;
+  } catch (error) {
+    console.error('Failed to parse API error response:', error);
+  }
+
+  return fallbackMessage;
+}
+
+function toRunLoadErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Could not load this run.';
+  const detail = error.message.trim();
+  if (!detail || detail.toLowerCase() === 'error') return 'Could not load this run.';
+  if (detail === 'Failed to fetch') {
+    return 'Could not reach the server. Start the backend and refresh.';
+  }
+
+  return detail;
+}
 
 interface RunData {
   id: string;
@@ -60,9 +100,10 @@ export default function RunPage({ runId }: RunPageProps) {
       setError(null);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/run/${runId}`);
+        const response = await fetch(getApiUrl(`/api/run/${runId}`));
         if (!response.ok) {
-          throw new Error('Run not found');
+          const errorMessage = await getApiErrorMessage(response);
+          throw new Error(errorMessage);
         }
 
         const data = (await response.json()) as RunData;
@@ -70,7 +111,7 @@ export default function RunPage({ runId }: RunPageProps) {
         setStatus('ready');
       } catch (err) {
         console.error('Failed to load run:', err);
-        setError('Could not load this run.');
+        setError(toRunLoadErrorMessage(err));
         setStatus('error');
       }
     };

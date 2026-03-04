@@ -10,6 +10,37 @@ const legacyDbPath = path.join(dataDir, 'musicbeat.db');
 
 let db: Database.Database;
 
+interface MissingColumnDefinition {
+  name: string;
+  definition: string;
+}
+
+interface TableInfoRow {
+  name: string;
+}
+
+function getColumnNames(database: Database.Database, tableName: string): Set<string> {
+  const rows = database.prepare(`PRAGMA table_info(${tableName})`).all() as TableInfoRow[];
+  return new Set(rows.map((row) => row.name));
+}
+
+function ensureTableColumns(
+  database: Database.Database,
+  tableName: string,
+  columns: MissingColumnDefinition[]
+): void {
+  const existingColumns = getColumnNames(database, tableName);
+
+  for (const column of columns) {
+    if (existingColumns.has(column.name)) {
+      continue;
+    }
+
+    database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${column.name} ${column.definition}`);
+    console.log(`Database migration: added ${tableName}.${column.name}`);
+  }
+}
+
 export function getDatabase(): Database.Database {
   if (!db) {
     // Ensure data directory exists
@@ -72,6 +103,34 @@ export function initDatabase(): void {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Backfill columns for legacy database files from older versions.
+  ensureTableColumns(database, 'beatmaps', [
+    { name: 'title', definition: "TEXT NOT NULL DEFAULT 'Untitled Track'" },
+    { name: 'duration', definition: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'bpm', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'difficulty', definition: "TEXT NOT NULL DEFAULT 'normal'" },
+    { name: 'audio_filename', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'notes_json', definition: "TEXT NOT NULL DEFAULT '[]'" },
+    { name: 'created_at', definition: 'TEXT DEFAULT CURRENT_TIMESTAMP' },
+    { name: 'play_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ]);
+  ensureTableColumns(database, 'runs', [
+    { name: 'title', definition: "TEXT NOT NULL DEFAULT 'Untitled Track'" },
+    { name: 'handle', definition: "TEXT NOT NULL DEFAULT 'player'" },
+    { name: 'score', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'accuracy', definition: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'max_combo', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'grade', definition: "TEXT NOT NULL DEFAULT 'F'" },
+    { name: 'perfect_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'good_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'ok_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'miss_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'bpm', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'duration', definition: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'difficulty', definition: "TEXT NOT NULL DEFAULT 'pro'" },
+    { name: 'created_at', definition: 'TEXT DEFAULT CURRENT_TIMESTAMP' },
+  ]);
 
   console.log('Database initialized');
 }

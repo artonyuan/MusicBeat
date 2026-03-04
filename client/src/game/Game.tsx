@@ -34,6 +34,8 @@ const NPC_HIT_Y = TABLE_Y + 50;
 
 // Ball
 const BALL_SIZE = 8;
+const PHANTOM_BALL_LIFETIME_SEC = 1.1;
+const PHANTOM_BALL_FADE_START_SEC = 0.35;
 
 // Colors - Lofi Pixel Art Palette
 const COLORS = {
@@ -165,6 +167,7 @@ interface ActiveNote extends BeatNote {
 
   // Hold note state
   holdStartTime?: number; // When player started holding
+  holdStartResult?: Exclude<HitResult, 'miss'>;
   holdProgress?: number; // 0-1 progress through hold
   nextHoldTickTime?: number;
   holdTickEverySec?: number;
@@ -243,11 +246,13 @@ export default function Game({ beatmap, currentTime, isPlaying, onHit }: GamePro
 
       // Hold notes: start holding instead of instant hit
       if (note.type === 'hold' && result !== 'miss') {
+        const holdStartResult = result;
         const beatInterval = 60 / beatmap.timing.bpm;
         const tickEveryBeats = note.holdTickEveryBeats ?? 0.5;
         const tickEverySec = tickEveryBeats * beatInterval;
 
         note.holdStartTime = currentTime;
+        note.holdStartResult = holdStartResult;
         note.holdProgress = 0;
         note.holdTickEverySec = tickEverySec;
         note.nextHoldTickTime = currentTime + tickEverySec;
@@ -260,7 +265,7 @@ export default function Game({ beatmap, currentTime, isPlaying, onHit }: GamePro
         // Don't mark as hit yet - will complete when hold finishes
         addHitFeedback({
           id: note.id + '-start',
-          result: 'ok',
+          result: holdStartResult,
           x: note.x,
           y: PLAYER_HIT_Y,
           timestamp: Date.now(),
@@ -569,7 +574,7 @@ export default function Game({ beatmap, currentTime, isPlaying, onHit }: GamePro
           // Check if hold is complete
           if (!note.hit && currentTime >= holdEndTime) {
             note.hit = true;
-            note.hitResult = 'perfect';
+            note.hitResult = note.holdStartResult ?? 'ok';
             note.returnPhase = true;
             note.returnProgress = 0;
             note.returnStartX = note.x;
@@ -656,8 +661,8 @@ export default function Game({ beatmap, currentTime, isPlaying, onHit }: GamePro
           note.x = note.missX! + note.velocityX * timeSinceMiss;
           note.y = note.missY! + note.velocityY * timeSinceMiss + 0.5 * gravity * timeSinceMiss * timeSinceMiss;
 
-          // Delete when off screen
-          if (note.y > CANVAS_HEIGHT + 100) {
+          // Keep phantom notes briefly for feedback, then cull.
+          if (timeSinceMiss >= PHANTOM_BALL_LIFETIME_SEC || note.y > CANVAS_HEIGHT + 100) {
             activeNotes.delete(id);
             return;
           }
@@ -726,6 +731,10 @@ export default function Game({ beatmap, currentTime, isPlaying, onHit }: GamePro
       // Draw balls with effects
       activeNotes.forEach((note) => {
         const isMissed = note.hit && note.hitResult === 'miss';
+        const missAgeSec = isMissed && note.missTime !== undefined
+          ? Math.max(0, currentTime - note.missTime)
+          : 0;
+        const missAlpha = isMissed ? getPhantomBallAlpha(missAgeSec) : 1;
 
         // Draw ball trail for incoming balls (not for hold notes being held)
         if (!note.hit && !note.returnPhase && !note.holdStartTime) {
@@ -738,7 +747,17 @@ export default function Game({ beatmap, currentTime, isPlaying, onHit }: GamePro
         }
 
         // Draw ball (including missed balls flying away)
-        drawBall(ctx, note.x, note.y, isMissed, note.intensity, note.returnPhase, note.type, note.holdStartTime !== undefined);
+        drawBall(
+          ctx,
+          note.x,
+          note.y,
+          isMissed,
+          note.intensity,
+          note.returnPhase,
+          note.type,
+          note.holdStartTime !== undefined,
+          missAlpha
+        );
       });
 
       // Hit feedback
@@ -968,14 +987,13 @@ function drawBallTrail(ctx: CanvasRenderingContext2D, note: ActiveNote, currentT
   const timeUntil = note.time - currentTime;
   const progress = Math.max(0, Math.min(1, 1 - (timeUntil / approachTime)));
 
-  // Solid trail
-  const trailIntensity: Record<NoteType, number> = {
-    normal: 255,
-    hold: 200,
-    echo: 220,
-    switch: 255,
+  const trailColors: Record<NoteType, { r: number; g: number; b: number }> = {
+    normal: { r: 255, g: 255, b: 255 },
+    hold: { r: 77, g: 208, b: 225 },
+    echo: { r: 179, g: 157, b: 219 },
+    switch: { r: 255, g: 112, b: 67 },
   };
-  const intensity = trailIntensity[note.type];
+  const trailColor = trailColors[note.type];
 
   for (let i = trailLength; i > 0; i--) {
     const trailProgress = Math.max(0, progress - i * 0.03);
@@ -992,7 +1010,7 @@ function drawBallTrail(ctx: CanvasRenderingContext2D, note: ActiveNote, currentT
 
     ctx.beginPath();
     ctx.arc(trailX, trailY, size, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${intensity}, ${intensity}, ${intensity}, ${alpha})`;
+    ctx.fillStyle = `rgba(${trailColor.r}, ${trailColor.g}, ${trailColor.b}, ${alpha})`;
     ctx.fill();
   }
 }
@@ -1015,6 +1033,16 @@ function drawHoldProgress(ctx: CanvasRenderingContext2D, x: number, y: number, p
   ctx.stroke();
 }
 
+function getPhantomBallAlpha(timeSinceMiss: number): number {
+  if (timeSinceMiss <= PHANTOM_BALL_FADE_START_SEC) return 0.55;
+
+  const fadeDuration = PHANTOM_BALL_LIFETIME_SEC - PHANTOM_BALL_FADE_START_SEC;
+  if (fadeDuration <= 0) return 0.55;
+
+  const fadeProgress = Math.min(1, (timeSinceMiss - PHANTOM_BALL_FADE_START_SEC) / fadeDuration);
+  return 0.55 * (1 - fadeProgress);
+}
+
 function drawBall(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1023,10 +1051,11 @@ function drawBall(
   intensity: number,
   isReturn: boolean,
   noteType: NoteType = 'normal',
-  isHolding: boolean = false
+  isHolding: boolean = false,
+  missAlpha: number = 0.55
 ) {
   if (isMiss) {
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = missAlpha;
   }
 
   // Size varies by note type
@@ -1062,17 +1091,24 @@ function drawBall(
   // Main ball - white with colored outline based on note type
   ctx.beginPath();
   ctx.arc(x, y, size, 0, Math.PI * 2);
-  ctx.fillStyle = '#ffffff';
+  const fillColors: Record<NoteType, string> = {
+    normal: '#ffffff',
+    hold: '#d9f8ff',
+    echo: '#efe7ff',
+    switch: '#ffe3d9',
+  };
+  ctx.fillStyle = isMiss ? '#f4f4f4' : fillColors[noteType];
   ctx.fill();
   
   // Outline for note types
-  let strokeColor = 'rgba(0,0,0,0.1)';
-  if (noteType === 'hold') strokeColor = COLORS.ballHold;
-  else if (noteType === 'echo') strokeColor = COLORS.ballEcho;
-  else if (noteType === 'switch') strokeColor = COLORS.ballSwitch;
-  
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = 2;
+  const strokeColors: Record<NoteType, string> = {
+    normal: 'rgba(0, 0, 0, 0.25)',
+    hold: COLORS.ballHold,
+    echo: COLORS.ballEcho,
+    switch: COLORS.ballSwitch,
+  };
+  ctx.strokeStyle = isMiss ? COLORS.miss : strokeColors[noteType];
+  ctx.lineWidth = noteType === 'normal' ? 2 : 2.5;
   ctx.stroke();
 
   // Subtle highlight

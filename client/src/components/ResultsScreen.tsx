@@ -1,13 +1,54 @@
 import { useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 
+import { clearAnonymousSession, getAnonymousSessionToken } from '../api/anonymousSession';
 import { downloadBeatmapDebugReport } from '../beatmap/beatmapDebug';
 import { useGameStore } from '../store/gameStore';
 import { DIFFICULTY_PRESETS } from '../types/game';
 
 import type { ChangeEvent } from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
+
+interface ApiErrorPayload {
+  error?: string;
+  message?: string;
+}
+
+function getApiUrl(path: string): string {
+  if (!API_BASE_URL) return path;
+  const normalizedBaseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+  return `${normalizedBaseUrl}${path}`;
+}
+
+async function getApiErrorMessage(response: Response): Promise<string> {
+  const fallbackMessage = `Request failed with status ${response.status}.`;
+
+  try {
+    const payload = (await response.json()) as ApiErrorPayload;
+    const errorMessage = typeof payload.error === 'string' ? payload.error.trim() : '';
+    if (errorMessage) return errorMessage;
+    const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+    if (message) return message;
+  } catch (error) {
+    console.error('Failed to parse API error response:', error);
+  }
+
+  return fallbackMessage;
+}
+
+function toShareErrorMessage(error: unknown): string {
+  const fallbackMessage = 'Could not create a share link. Try again.';
+  if (!(error instanceof Error)) return fallbackMessage;
+
+  const detail = error.message.trim();
+  if (!detail || detail.toLowerCase() === 'error') return fallbackMessage;
+  if (detail === 'Failed to fetch') {
+    return 'Could not reach the server. Start the backend and try again.';
+  }
+
+  return `${fallbackMessage} ${detail}`;
+}
 
 function getGrade(accuracy: number) {
   if (accuracy >= 95) return { grade: 'S', color: '#ffeb3b' };
@@ -111,28 +152,43 @@ export default function ResultsScreen() {
     setCopyMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: safeTitle,
-          handle: safeHandle,
-          score: scoreValue,
-          accuracy: Number(accuracyValue.toFixed(1)),
-          maxCombo: score.maxCombo,
-          grade,
-          perfectCount: score.perfectCount,
-          goodCount: score.goodCount,
-          okCount: score.okCount,
-          missCount: score.missCount,
-          bpm,
-          duration,
-          difficulty,
-        }),
+      const body = JSON.stringify({
+        title: safeTitle,
+        handle: safeHandle,
+        score: scoreValue,
+        accuracy: Number(accuracyValue.toFixed(1)),
+        maxCombo: score.maxCombo,
+        grade,
+        perfectCount: score.perfectCount,
+        goodCount: score.goodCount,
+        okCount: score.okCount,
+        missCount: score.missCount,
+        bpm,
+        duration,
+        difficulty,
       });
 
+      const sendRunRequest = async (forceSessionRefresh: boolean): Promise<Response> => {
+        const sessionToken = await getAnonymousSessionToken({ forceRefresh: forceSessionRefresh });
+        return fetch(getApiUrl('/api/run'), {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${sessionToken}`,
+            'Content-Type': 'application/json',
+          },
+          body,
+        });
+      };
+
+      let response = await sendRunRequest(false);
+      if (response.status === 401) {
+        clearAnonymousSession();
+        response = await sendRunRequest(true);
+      }
+
       if (!response.ok) {
-        throw new Error('Failed to save run');
+        const errorMessage = await getApiErrorMessage(response);
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -140,7 +196,7 @@ export default function ResultsScreen() {
       setShareStatus('saved');
     } catch (error) {
       console.error('Failed to save run:', error);
-      setShareError('Could not create a share link. Try again.');
+      setShareError(toShareErrorMessage(error));
       setShareStatus('error');
     }
   };

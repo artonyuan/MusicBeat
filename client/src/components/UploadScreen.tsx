@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
+
 import { useGameStore } from '../store/gameStore';
-
-
 interface DifficultyButtonProps {
   label: string;
   active: boolean;
@@ -25,6 +24,7 @@ function DifficultyButton({ label, active, onClick }: DifficultyButtonProps) {
 export default function UploadScreen() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+
   const setScreen = useGameStore((state) => state.setScreen);
   const setAudioBuffer = useGameStore((state) => state.setAudioBuffer);
   const setBeatmap = useGameStore((state) => state.setBeatmap);
@@ -33,6 +33,8 @@ export default function UploadScreen() {
   const setSongTitle = useGameStore((state) => state.setSongTitle);
   const difficulty = useGameStore((state) => state.difficulty);
   const setDifficulty = useGameStore((state) => state.setDifficulty);
+  const musicVolume = useGameStore((state) => state.musicVolume);
+  const setMusicVolume = useGameStore((state) => state.setMusicVolume);
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith('audio/')) {
@@ -84,6 +86,10 @@ export default function UploadScreen() {
     if (file) handleFile(file);
   };
 
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMusicVolume(Number.parseFloat(e.target.value));
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.content}>
@@ -120,27 +126,41 @@ export default function UploadScreen() {
 
         <div style={styles.difficultyContainer}>
           <div style={styles.difficultyButtons}>
-            <DifficultyButton 
-              label="NOOB" 
-              active={difficulty === 'noob'} 
+            <DifficultyButton
+              label="NOOB"
+              active={difficulty === 'noob'}
               onClick={() => setDifficulty('noob')}
             />
-            <DifficultyButton 
-              label="PRO" 
-              active={difficulty === 'pro'} 
+            <DifficultyButton
+              label="PRO"
+              active={difficulty === 'pro'}
               onClick={() => setDifficulty('pro')}
             />
-            <DifficultyButton 
-              label="HACKER" 
-              active={difficulty === 'hacker'} 
+            <DifficultyButton
+              label="HACKER"
+              active={difficulty === 'hacker'}
               onClick={() => setDifficulty('hacker')}
             />
           </div>
           <p style={styles.difficultyDesc}>
-            {difficulty === 'noob' && "Forgiving timing. Good for beginners."}
-            {difficulty === 'pro' && "The intended experience. Balanced."}
-            {difficulty === 'hacker' && "Tight timing. Fast balls. No mercy."}
+            {difficulty === 'noob' && 'Forgiving timing. Good for beginners.'}
+            {difficulty === 'pro' && 'The intended experience. Balanced.'}
+            {difficulty === 'hacker' && 'Tight timing. Fast balls. No mercy.'}
           </p>
+        </div>
+
+        <div style={styles.volumeContainer}>
+          <span style={styles.volumeLabel}>MUSIC VOLUME</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={musicVolume}
+            onChange={handleVolumeChange}
+            style={styles.volumeSlider}
+          />
+          <span style={styles.volumeValue}>{Math.round(musicVolume * 100)}%</span>
         </div>
 
         <div style={styles.instructions}>
@@ -289,6 +309,43 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '12px',
     height: '14px', // Prevent layout shift
     fontStyle: 'italic',
+  },
+  volumeContainer: {
+    marginTop: '24px',
+    padding: '14px 16px',
+    border: '2px solid #d8d8d8',
+    background: '#f8f8f8',
+    display: 'grid',
+    gridTemplateColumns: '1fr auto',
+    gridTemplateRows: 'auto auto',
+    columnGap: '10px',
+    rowGap: '8px',
+    alignItems: 'center',
+  },
+  volumeLabel: {
+    gridColumn: '1 / 2',
+    gridRow: '1 / 2',
+    fontSize: '11px',
+    color: '#666',
+    letterSpacing: '1.5px',
+    fontWeight: 'bold',
+    textAlign: 'left',
+  },
+  volumeSlider: {
+    gridColumn: '1 / 2',
+    gridRow: '2 / 3',
+    width: '100%',
+    cursor: 'pointer',
+    accentColor: '#4d80c9',
+  },
+  volumeValue: {
+    gridColumn: '2 / 3',
+    gridRow: '2 / 3',
+    fontSize: '12px',
+    color: '#333',
+    fontWeight: 'bold',
+    minWidth: '44px',
+    textAlign: 'right',
   },
   instructions: {
     marginTop: '40px',

@@ -22,6 +22,8 @@ interface GameState {
   // Game settings
   difficulty: DifficultyLevel;
   setDifficulty: (difficulty: DifficultyLevel) => void;
+  musicVolume: number;
+  setMusicVolume: (volume: number) => void;
   getGameplaySettings: () => GameplaySettings;
 
   // Game phase
@@ -75,15 +77,28 @@ const MAX_HEALTH = 1;
 const MIN_HEALTH = 0;
 const HANDLE_STORAGE_KEY = 'pong:handle';
 const LEGACY_HANDLE_STORAGE_KEY = 'musicbeat:handle';
+const VOLUME_STORAGE_KEY = 'musicbeat:volume';
+const DEFAULT_MUSIC_VOLUME = 0.3;
 
 function clampHealth(value: number) {
   return Math.max(MIN_HEALTH, Math.min(MAX_HEALTH, value));
+}
+
+function clampVolume(value: number) {
+  return Math.max(0, Math.min(1, value));
 }
 
 const storedHandle = typeof window !== 'undefined'
   ? (window.localStorage.getItem(HANDLE_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_HANDLE_STORAGE_KEY))
   : null;
 const defaultHandle = storedHandle && storedHandle.trim() ? storedHandle : 'player';
+const storedVolume = typeof window !== 'undefined'
+  ? window.localStorage.getItem(VOLUME_STORAGE_KEY)
+  : null;
+const parsedStoredVolume = storedVolume === null ? Number.NaN : Number.parseFloat(storedVolume);
+const defaultMusicVolume = Number.isFinite(parsedStoredVolume)
+  ? clampVolume(parsedStoredVolume)
+  : DEFAULT_MUSIC_VOLUME;
 
 export const useGameStore = create<GameState>((set, get) => ({
   screen: 'upload',
@@ -91,6 +106,14 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   difficulty: 'pro', // Default to 'pro' for best experience
   setDifficulty: (difficulty) => set({ difficulty }),
+  musicVolume: defaultMusicVolume,
+  setMusicVolume: (musicVolume) => {
+    const normalizedVolume = clampVolume(musicVolume);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(VOLUME_STORAGE_KEY, normalizedVolume.toString());
+    }
+    set({ musicVolume: normalizedVolume });
+  },
   getGameplaySettings: () => DIFFICULTY_PRESETS[get().difficulty],
 
   phase: 'countdown',
