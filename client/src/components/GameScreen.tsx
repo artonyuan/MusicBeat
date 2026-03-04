@@ -116,29 +116,9 @@ export default function GameScreen() {
     }, FAIL_AUDIO_DURATION_MS);
   }, [clearFailTimeout, finalizeRun, setPhase, setRunOutcome]);
 
-  // Load hit sound effect from file
+  // Initialize generated hit sound effect
   useEffect(() => {
-    const loadHitSound = async () => {
-      try {
-        const response = await fetch('/sounds/hit.mp3');
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          const audioContext = new AudioContext();
-          const buffer = await audioContext.decodeAudioData(arrayBuffer);
-          hitSoundBufferRef.current = buffer;
-          audioContext.close();
-          console.log('Loaded custom hit sound');
-        } else {
-          // Fallback: generate sound if file not found
-          generateHitSound();
-        }
-      } catch (e) {
-        console.log('Using generated hit sound');
-        generateHitSound();
-      }
-    };
-
-    const generateHitSound = async () => {
+    const generateHitSound = () => {
       const audioContext = new AudioContext();
       const duration = 0.1;
       const sampleRate = audioContext.sampleRate;
@@ -158,7 +138,7 @@ export default function GameScreen() {
       audioContext.close();
     };
 
-    loadHitSound();
+    generateHitSound();
   }, []);
 
   // Play hit sound
@@ -550,48 +530,52 @@ const styles: Record<string, React.CSSProperties> = {
   },
   countdownHint: {
     margin: 0,
-    fontSize: '13px',
-    color: '#b6a8b3',
+    fontSize: '14px',
+    color: '#555',
+    fontWeight: 'bold',
     letterSpacing: '0.4px',
   },
   countdownControls: {
     marginTop: '20px',
-    padding: '12px 14px',
+    padding: '16px 24px',
     minWidth: '280px',
-    background: 'rgba(20, 24, 34, 0.82)',
-    border: '2px solid rgba(224, 213, 200, 0.42)',
-    borderRadius: '4px',
+    background: '#ffffff',
+    border: '2px solid #e0e0e0',
+    borderRadius: '8px',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '7px',
+    gap: '12px',
+    fontFamily: '"Courier New", Courier, monospace',
   },
   countdownControlsTitle: {
-    fontSize: '10px',
-    color: '#d7cabf',
+    fontSize: '12px',
+    color: '#888',
     letterSpacing: '2px',
-    fontWeight: 700,
+    fontWeight: 'bold',
   },
   countdownKeyRow: {
     display: 'flex',
-    gap: '6px',
+    gap: '8px',
   },
   countdownKey: {
     minWidth: '42px',
-    padding: '7px 10px',
-    borderRadius: '2px',
-    border: '2px solid rgba(224, 213, 200, 0.58)',
-    background: 'rgba(224, 213, 200, 0.08)',
-    color: '#eee2d8',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '2px solid #e0e0e0',
+    background: '#f9f9f9',
+    color: '#333',
     fontSize: '22px',
-    fontWeight: 700,
+    fontWeight: 'bold',
     lineHeight: 1,
     textAlign: 'center',
+    boxShadow: '0 2px 0 #e0e0e0',
   },
   countdownAltHint: {
     margin: 0,
-    fontSize: '11px',
-    color: '#9f97a6',
+    fontSize: '12px',
+    color: '#888',
     letterSpacing: '0.2px',
   },
   pauseOverlay: {
